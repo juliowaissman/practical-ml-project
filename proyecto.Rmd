@@ -1,0 +1,68 @@
+---
+title: "Predicting *how (well)* an Weight Lifting Exercises was Performed"
+author: "Julio Waissman Vilanova"
+date: "February 23, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Problem description
+
+In this work, a practical machine learning study was performed in order to predict the manner in which a individual perform a weight lifting exercise. Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The data was collected from accelerometers on the belt, forearm, arm, and dumbell. 
+
+More information on the data can be obtained from
+
+> Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. 
+> "Qualitative Activity Recognition of Weight Lifting Exercises." 
+> *Proceedings of 4th International Conference in Cooperation with SIGCHI 
+> (Augmented Human '13).* Stuttgart, Germany: ACM SIGCHI, 2013.
+
+The data is downloaded and read as  
+```{r download_open_data}
+if (!dir.exists("pml-data")){
+    dir.create("pml-data")
+    if (!file.exists("pml-data/pml-training.csv"))
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                      "pml-data/pml-training.csv")
+    if (!file.exists("pml-data/pml-testing.csv"))
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                      "pml-data/pml-testing.csv")
+}
+
+pml.train <- read.csv("pml-data/pml-training.csv", 
+                      na.strings = c('', 'NA', '"NA"', "#DIV/0"))
+pml.test <- read.csv("pml-data/pml-testing.csv", 
+                     na.strings = c('', 'NA', '"NA"', "#DIV/0"))
+```
+The data frame contains two timestamps numerical series, one `datetime` format serie, an enumeration of cases, the `classe` variable and 46 numerical variables from the accelerometers. 
+
+## Preprocessing data
+
+After a visual inspection of the data there is evident that tere exists variables that have one unique value or  they have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large. Also, some variables have more than 50% of missing data, and then, an imputation technique can not be applied. The data was cleaned as:
+
+```{r preproc_one}
+
+library(caret)
+
+# Near zero variables
+nzv <- nearZeroVar(pml.train)
+pml.train <- pml.train[, -nzv]
+pml.test <- pml.test[, -nzv]
+
+# Variables with more than 50% of missing values
+a <- sapply(pml.train, function (l) sum(is.na(l))/19622 < 0.5)
+pml.train <- pml.train[, a]
+pml.test <- pml.test[, a]
+
+# Checking if we keep variables with missing values
+which(is.na(pml.train))
+```
+
+
+
