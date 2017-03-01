@@ -4,4 +4,4 @@
 
 **Julio Waissman Vilanova**
 
-
+https://juliowaissman.github.io/practical-ml-project/
