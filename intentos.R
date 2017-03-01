@@ -40,7 +40,6 @@ which(is.na(pml.train))
 pml.train$user_name <- factor(pml.train$user_name)
 pml.train$classe <- factor(pml.train$classe)
 pml.test$user_name <- factor(pml.test$user_name)
-pml.test$classe <- factor(pml.test$classe)
 
 # Sin hacer trampa con la serie de tiempo
 pml.train0 <- pml.train[, -c(1,3,4,5)]
@@ -57,26 +56,26 @@ pml.train1 <- predict(cen.esc, pml.train0)
 pml.test1 <- predict(cen.esc, pml.test0)
 
 # Componentes principales
-trans <- preProcess(pml.train1, method='pca')
-pml.train2 <- predict(trans, pml.train1)
-pml.test2 <- predict(trans, pml.test1)
-
-
-featurePlot(x = pml.train1[, 3:6], 
-            y = pml.train1$classe,
-            plot = "pairs", 
-            ## Pass in options to xyplot() to 
-            ## make it prettier
-            scales = list(x = list(relation="free"), 
-                          y = list(relation="free")))
-
-featurePlot(x = pml.train1[, 3:6], 
-            y = pml.train1$user_name,
-            plot = "pairs", 
-            ## Pass in options to xyplot() to 
-            ## make it prettier
-            scales = list(x = list(relation="free"), 
-                          y = list(relation="free")))
+# trans <- preProcess(pml.train1, method='pca')
+# pml.train2 <- predict(trans, pml.train1)
+# pml.test2 <- predict(trans, pml.test1)
+# 
+# 
+# featurePlot(x = pml.train1[, 3:6], 
+#             y = pml.train1$classe,
+#             plot = "pairs", 
+#             ## Pass in options to xyplot() to 
+#             ## make it prettier
+#             scales = list(x = list(relation="free"), 
+#                           y = list(relation="free")))
+# 
+# featurePlot(x = pml.train1[, 3:6], 
+#             y = pml.train1$user_name,
+#             plot = "pairs", 
+#             ## Pass in options to xyplot() to 
+#             ## make it prettier
+#             scales = list(x = list(relation="free"), 
+#                           y = list(relation="free")))
 
 # Split training data between training and validation
 set.seed(12345)
@@ -85,9 +84,9 @@ inTraining <- createDataPartition(pml.train1$classe,
 training <- pml.train1[inTraining,]
 validation <- pml.train1[-inTraining,]
 
-# Using 10-fold-cross-validation with 3 repetitions 
-fitControl <- trainControl(method = "repeatedcv",
-                           number = 10, repeats = 3)
+# Using 3-fold-cross-validation 
+fitControl <- trainControl(method = "cv",
+                           number = 10)
 
 # Using a random forest model
 set.seed(54321)
@@ -102,4 +101,23 @@ mdl2 <- train(classe ~ ., data = training,
               trControl = fitControl,
               verbose = FALSE)
 
+
+# Compare the two models
+
+resamps <- resamples(list(Random_Forest = mdl1,
+                          Gradien_Boosting = mdl2))
+bwplot(resamps, layout = c(2, 1))
+
+
+accuracy <- function (model, data)    
+    mean(data$classe == predict(model, data)) 
+a <- data.frame(in.sample = c(accuracy(mdl1, training),
+                              accuracy(mdl2, training)),
+                out.sample = c(accuracy(mdl1, validation),
+                               accuracy(mdl2, validation)),
+                row.names = c('Random Forest', 'Gradient Boosting'))
+
+
+results <- data.frame(RF= predict(mdl1, pml.test1),
+                      GBM = predict(mdl2, pml.test1))
 

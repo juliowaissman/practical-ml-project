@@ -24,7 +24,7 @@ More information on the data can be obtained from
 > (Augmented Human '13).* Stuttgart, Germany: ACM SIGCHI, 2013.
 
 The data is downloaded and read as  
-```{r download_open_data}
+```{r download_open_data, results='hide', cache=TRUE}
 if (!dir.exists("pml-data")){
     dir.create("pml-data")
     if (!file.exists("pml-data/pml-training.csv"))
@@ -44,9 +44,9 @@ The data frame contains two timestamps numerical series, one `datetime` format s
 
 ## Preprocessing data
 
-After a visual inspection of the data there is evident that tere exists variables that have one unique value or  they have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large. Also, some variables have more than 50% of missing data, and then, an imputation technique can not be applied. The data was cleaned as:
+From a visual inspection of the data, there exists variables that have one unique value or they have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large. Also, some variables have more than 50% of missing data. In these cases an imputation technique can not be applied. The data was cleaned as:
 
-```{r preproc_one}
+```{r preproc_one, results='hide', cache=TRUE}
 
 library(caret)
 
@@ -60,9 +60,121 @@ a <- sapply(pml.train, function (l) sum(is.na(l))/19622 < 0.5)
 pml.train <- pml.train[, a]
 pml.test <- pml.test[, a]
 
-# Checking if we keep variables with missing values
+# Checking if we keep some variables with missing values
+# in order to use an imptation method
 which(is.na(pml.train))
 ```
 
+The objective of the project is to predict from data collected from accelerometers. If we used the time series information we could make a good prediction with the closest neighbor method, however that would be cheating. For this reason we remove all information related to the time series. 
+```{r sin_trampa, results='hide'}
+pml.train0 <- pml.train[, -c(1,3,4,5)]
+pml.test0 <- pml.test[, -c(1,3,4,5)]
+```
 
+While there are some learning methods that thrive on correlated predictors (such as pls), most of the methods may benefit from reducing the level of correlation between the predictors. We remove descriptors with absolute correlations above 0.9.
+
+```{r remove_correlated, results='hide', cache=TRUE}
+des.cor <- cor(pml.train0[,2:54])
+highly.cor <- findCorrelation(des.cor, cutoff = .9) + 1
+pml.train0 <- pml.train0[, -highly.cor]
+pml.test0 <- pml.test0[, -highly.cor]
+```
+
+At this point, it is important to perform a visual exploration of the data in order to explore which type of transformation and learnng algorithm can be useful. A PCA is performed in order to explore the 4 principal components.
+
+```{r pca, results='asis', cache=TRUE}
+trans <- preProcess(pml.train0, method='pca')
+pml.train.pca <- predict(trans, pml.train0)
+
+featurePlot(x = pml.train.pca[, 3:6], 
+            y = pml.train.pca$classe,             
+            plot = "density",              
+            scales = list(x = list(relation="free"), 
+                          y = list(relation="free")))
+```
+
+The figure illustrate that for the 4 first principal components, the distribution of the data is far to a normal distribution for each class, an even for the whole data. Thus, the PCA (and other data transformation based in the hypothesis that the data distribution is normal), can not be applied. Also, model based methods or generalized linear models can not be applied (due to the known probability distribution assumption). The only transformation methods to be applied to the numerical data is scaling and centering.
+
+```{r, results='hide', cache=TRUE}
+cen.esc <- preProcess(pml.train0, method = c("center", "scale"))
+pml.train1 <- predict(cen.esc, pml.train0)
+pml.test1 <- predict(cen.esc, pml.test0)
+```
+
+## Prediction model
+
+To compare the result to apply different prediction models, a split of the data is performed, using 80% of the data for training and 20% for validation. The function `createDataPartition` can be used to create balanced splits of the data. The random sampling occurs within each class and should preserve the overall class distribution of the data. 
+
+```{r split, results='hide', cache=TRUE}
+set.seed(12345)
+inTraining <- createDataPartition(pml.train1$classe, 
+                                  p = .75, list = FALSE)
+training <- pml.train1[inTraining,]
+validation <- pml.train1[-inTraining,]
+```
+
+In order to perform the prediction, we will use *K-folder-cross-validation*. Ideally, the best cross validation methos is *one-leave-out*, but that implies to perform 14717 trainig algorthms with 14717 objects each one. In order to perform the training phase in an acceptable time (using R in a old laptop) the 10-fold-cross-validation is performed without repetitions.
+
+```{r trControl, results='hide', cache=TRUE}
+fitControl <- trainControl(method = "cv", number = 10)
+```
+
+Two prediction models proposed in the course has the most effectives are performed and compared: Random Forest and Boosting:
+
+```{r prediction_models, results='hide', cache=TRUE}
+set.seed(54321)
+mdl1 <- train(classe ~ ., data = training, 
+              method = "rf", 
+              trControl = fitControl,
+              verbose = FALSE)
+
+set.seed(54321)
+mdl2 <- train(classe ~ ., data = training, 
+              method = "gbm", 
+              trControl = fitControl,
+              verbose = FALSE)
+
+```
+
+
+## Models analysis
+
+In order to compare the models, the `caret` package provides the function `resamples` in order to make statistical statements about their performance differences.
+
+```{r analisis, results='asis', cache=TRUE}
+resamps <- resamples(list(Random_Forest = mdl1,
+                          Gradient_Boosting = mdl2))
+bwplot(resamps, layout = c(2, 1))
+```
+
+From the figure we can highlight that both models have a very high accuracy (above 0.985 in average) but statistically the accuracy is better in the method of Random Forests.
+
+In order to analyze the differences of the *in sample* errors versus an approximation of the *out sample* errors we will use the validation data and compare the results in a data frame.
+
+```{r in_out_sample, results='asis', cache=TRUE}
+accuracy <- function (model, data)    
+    mean(data$classe == predict(model, data)) 
+a <- data.frame(in.sample = c(accuracy(mdl1, training),
+                              accuracy(mdl2, training)),
+                out.sample = c(accuracy(mdl1, validation),
+                               accuracy(mdl2, validation)),
+                row.names = c('Random Forest', 'Gradient Boosting'))
+knitr::kable(a)
+```
+
+From the table it can be seen that the difference in the accuracy obtained with the training data and the validation data is very small. For this reason, it can be expected that the prediction performed on data other than training data is very similar to that obtained with the training data, which is very good.
+
+## Prediction 
+
+Finally, we will predict the classes of the test data with both models and we will compare the results.
+
+```{r prediccion, results='asis', cache=TRUE}
+results <- data.frame(RF= predict(mdl1, pml.test1),
+                      GBM = predict(mdl2, pml.test1))
+knitr::kable(results)
+```
+
+As we can see, both models coincide in all cases. 
+
+That's all folks.
 
